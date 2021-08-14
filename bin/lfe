@@ -27,14 +27,15 @@ follow_symlink () {
 }
 
 show_help () {
-    echo "Usage: `basename $0` [flags] file [args]
+    echo "Usage: `basename $0` arguments
 
     -h | --help              Print this help and exit
-    -e | -eval \"sexp\"        Evaluates the given sexpr
-    -- | -extra \"switches\"   Send misc configuration switches to the Erlang VM
+    -e | -eval \"sexpr\" ...   Evaluates the given LFE sexprs
+    -erl_eval \"expr\"         Evaluate the Erlang expr
     -prompt value            Set the LFE prompt to a user-supplied value
-    -flag | +flag            Enables/disables configuration flags to be
-                             used by the Erlang VM" >&2
+    -nobanner                No LFE repl banner
+    -- | -extra arg          Send misc configuration switches to the Erlang VM
+    -flag | +flag            Configuration flags to be used by the Erlang VM" >&2
 }
 
 SELF=$(follow_symlink "$0")
@@ -47,62 +48,56 @@ export LFE_BINDIR
 export LFE_PROGNAME
 
 i="$#"                          # Counter
-e=""                            # Eval flag/value
+LFE_INIT="lfe_init"             # The lfe_init to use
 
-# First step over the flag section adding them to the end.
+echo "-BEFORE-" "$i" "$@"
+
+# Add the explict -noshell, starting lfe_init and --
+set -- "$@" "-noshell" "-user" "$LFE_INIT" "--"
+
+# First step over the flag section adding them to the end specially
+# handling -h, -eval, -erl_eval and -noshell. We stop at -extra and
+# leave the rest as is.
 while [ "$i" -gt 0 ]; do
     case "$1" in
-        -e | -eval | -lfe_eval) # We are going to eval
-            e="-lfe_eval"
-            break ;;            # delay removing this
         -h | --help)
             $(show_help)        # Show help
             exit 1 ;;
-        -extra | --)            # We are explicitly done
+        -e | -eval | -lfe_eval) # Evaluate LFE strings
+            set -- "$@" "-run" "$LFE_INIT" "eval_strings"
+            shift ; i=`expr $i - 1`
+            ;;
+        -erl_eval)              # Evaluate erlang strings
+            set -- "$@" "-eval"
+            shift ; i=`expr $i - 1`
+            ;;
+        -noshell)               # We don't want a repl
+            set -- "$@" "-norepl"
+            shift ; i=`expr $i - 1`
+            ;;
+        -extra)                 # We are explicitly done
+	    set -- "$@" "-extra"
             shift ; i=`expr $i - 1`
             break ;;
-        -* | +*)  # Flags
-                if [ "$1" = "-erl_eval" ]; then
-                        set -- "$@" "-eval"
-                else
-                        set -- "$@" "$1"
-                fi
-
+        *)                      # Other arguments
+            set -- "$@" "$1"
             shift ; i=`expr $i - 1`
-
-            while [ "$i" -gt 0 ]; do
-                case "$1" in
-                    -* | +*)
-                        break ;;
-                    *)
-                        set -- "$@" "$1"
-                        shift ; i=`expr $i - 1`
-                esac
-            done ;;
-            *)  # Plain argument
-            break ;;
+            ;;
     esac
 done
 
-# Add the middle bit to the end, a -noshell flag if there are
-# more arguments.
-if [ "$i" -gt 0 ]; then
-    set -- "$@" "-noshell"
-fi
+# # Add the explict -noshell, starting lfe_init and -extra
+# set -- "$@" "-noshell" "-user" "$LFE_INIT" "-extra"
 
-set -- "$@" "-user" "lfe_init" "-extra"
+echo "-MIDDLE-" "$i" "$@"
 
-# Check if we are 'eval'ing and add -lfe_eval flag
-if [ "$e" != "" ]; then
-    shift ; i=`expr $i - 1`     # Now we remove it as it has -noshell'ed
-    set -- "$@" "-lfe_eval"
-fi
-
-# Step over the arg section adding them to the end.
+# Step over the remaining args just adding them as is to the end.
 while [ "$i" -gt 0 ]; do
     set -- "$@" "$1"
     shift ; i=`expr $i - 1`
 done
+
+echo "-AFTER- " "$i" "$@"
 
 # The order of precedence for LFE libraries is as follows:
 # 1) The LFE_ROOTDIR for the current bin/lfe being executed is unusurpable;
@@ -138,4 +133,5 @@ else
 fi
 LFE_HOME_LIBS=$(find_libs "$HOME"/.lfe/lib)
 ALL_LIBS="$LFE_ROOTDIR":"$ERL_LIBS":"$PROJ_LIBS""$R3_PROJ_LIBS""$LFE_HOME_LIBS"
+echo "-RUN-   " exec erl "$@"
 ERL_LIBS="$ALL_LIBS" exec erl "$@"

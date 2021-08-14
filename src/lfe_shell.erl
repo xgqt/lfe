@@ -132,7 +132,8 @@ server(St) ->
     %% Set shell io to use LFE expand in edlin, ignore error.
     io:setopts([{expand_fun,fun (B) -> lfe_edlin_expand:expand(B) end}]),
     Eval = start_eval(St),                      %Start an evaluator
-    server_loop(Eval, St).                      %Run the loop
+    server_loop(Eval, St),                      %Run the loop
+    init:stop(0).                               %Stop the system cleanly (?)
 
 server_loop(Eval0, St0) ->
     %% Read the form
@@ -144,7 +145,9 @@ server_loop(Eval0, St0) ->
             server_loop(Eval2, St1);
         {error,E} ->
             list_errors([E]),
-            server_loop(Eval1, St0)
+            server_loop(Eval1, St0);
+        eof ->                                  %No more input
+            ok                                  %End the loop
     end.
 
 %% shell_eval(From, Evaluator, State) -> {Evaluator,State}.
@@ -259,17 +262,24 @@ make_banner() ->
        ?GRN("    \\   ") ++ ?RED("r") ++ ?GRN("     /") ++  "      |   LFE v~s ~s\n" ++
        ?GRN("     `-") ++ ?RED("E") ++ ?GRN("___.-'") ++ "\n\n", [get_lfe_version(), get_abort_message()])].
 
+make_small_banner() ->
+    io_lib:format("LFE v~s ~s", [get_lfe_version(),get_abort_message()]).
+
 display_banner() ->
     %% When LFE is called with -noshell, we want to skip the banner. Also, there may be
     %% circumstances where the shell is desired, but the banner needs to be disabled,
     %% thus we want to support both use cases.
-    case init:get_argument(noshell) of
-        error -> case init:get_argument(nobanner) of
-                    error -> io:put_chars(make_banner());
-                    _ -> false
-                 end;
+    case init:get_argument(nobanner) of
+        error -> io:put_chars(make_banner());
         _ -> false
     end.
+    %% case init:get_argument(noshell) of
+    %%     error -> case init:get_argument(nobanner) of
+    %%                 error -> io:put_chars(make_banner());
+    %%                 _ -> false
+    %%              end;
+    %%     _ -> false
+    %% end.
 
 get_abort_message() ->
     %% We can update this later to check for env variable settings for

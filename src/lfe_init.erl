@@ -1,4 +1,4 @@
-%% Copyright (c) 2008-2020 Robert Virding
+%% Copyright (c) 2008-2021 Robert Virding
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@
 
 -module(lfe_init).
 
--export([start/0]).
+-export([start/0,eval_strings/0,eval_strings/1]).
 
 -include("lfe.hrl").
 
@@ -37,54 +37,62 @@
 %% Start LFE running a script or the shell depending on arguments.
 
 start() ->
-    case collect_args(init:get_plain_arguments()) of
-        {[],[]} ->                              %Run a shell
-            user_drv:start(['tty_sl -c -e',{lfe_shell,start,[]}]);
-        {Es,Script} ->
-            user:start(),
-            %% io:format("es: ~p\n", [{Es,Script}]),
-            run_evals_script(Es, Script)
+    Args = init:get_arguments(),
+    erlang:display({args,Args}),
+    Plain = init:get_plain_arguments(),
+    erlang:display({plain,Plain}),
+    Repl = init:get_argument(norepl),
+    erlang:display({norepl,Repl}),
+    Evals = collect_evals(),
+    erlang:display({evals,Evals}),
+    run_repl().
+
+collect_evals() ->
+    collect_evals(init:get_argument(lfe_eval)).
+
+collect_evals({ok,Evals}) ->
+    lists:flatmap(fun (E) -> E end, Evals);
+collect_evals(error) -> [].
+
+%% run_repl() -> no_return().
+%%  Run the LFE repl the "smart" way if the tty works, otherwise
+%%  start a dumb terminal version.
+
+run_repl() ->
+    Tty = check_tty(),
+    Repl = check_repl(),
+    erlang:display({check_tty_repl,Tty,Repl}),
+    case Tty and Repl of
+	true ->
+	    user_drv:start(['tty_sl -c -e',{lfe_shell,start,[]}]);
+	false ->
+	    user:start(),
+	    Repl andalso lfe_shell:start()
     end.
 
-collect_args([E,S|As]) when E == "-lfe_eval" ; E == "-eval" ; E == "-e" ->
-    {Es,Script} = collect_args(As),
-    {[S] ++ Es,Script};
-collect_args([E]) when E == "-lfe_eval" ; E == "-eval" ; E == "-e" ->
-    {[],[]};
-collect_args(As) -> {[],As}.                    %Remaining become script
+%% check_tty() -> boolean().
+%%  Check whether we can open the tty and it works.
 
-%% run_evals_script(Evals, Script) -> Pid.
-%%  Firat evaluate all the eval strings if any then the script if
-%%  there is one. The state from the string is past into the
-%%  script. We can handle no strings and no script.
-
-run_evals_script(Evals, Script) ->
-    S = fun () ->
-                St = lfe_shell:run_strings(Evals),
-                case Script of
-                    [F|As] ->
-                        lfe_shell:run_script(F, As, St);
-                    [] -> {[],St}
-                end
-        end,
-    spawn_link(fun () -> run_script(S) end).
-
-%% run_script(Script)
-%%  Run a script and terminate the erlang process afterwards.
-
-run_script(Script) ->
+check_tty() ->
     try
-        Script(),                               %Evaluate the script
-        %% For some reason we need to wait a bit before stopping.
-        timer:sleep(1),
-        init:stop(?OK_STATUS)
+	Port = open_port({spawn,'tty_sl -c -e'}, [eof]),
+	port_close(Port)
     catch
-        ?CATCH(Class, Error, Stack)
-            Sf = fun ({M,_F,_A,_L}) ->
-                         M /= lfe_eval
-                 end,
-            Ff = fun (T, I) -> lfe_io:prettyprint1(T, 15, I, 80) end,
-            Cs = lfe_lib:format_exception(Class, Error, Stack, Sf, Ff, 1),
-            io:put_chars(Cs),
-            halt(?ERROR_STATUS)
+	_Class:_Exception -> false
     end.
+
+check_repl() ->
+    init:get_argument(norepl) =:= error.
+
+%% eval_strings() -> ok.
+%% eval_strings(Strings) -> ok.
+%%  Evaluate the strings in an -eval/-lfe_eval flag. We specially
+%%  allow, and handle, no strings. Note that we do each use of -eval
+%%  separately.
+
+eval_strings() ->
+    ok.
+
+eval_strings(Strings) ->
+    lfe_shell:run_strings(Strings),
+    ok.

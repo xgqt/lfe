@@ -61,15 +61,15 @@ run([File|Args], Lopts) ->
         %% Catch program errors.
         throw:Str ->
             lfe_io:format("lfescript: ~s\n", [Str]),
-            halt(?ERROR_STATUS);
+            init:stop(?ERROR_STATUS);
         ?CATCH(_, Reason, Stack)
             lfe_io:format("lfescript: Internal error: ~p\n", [Reason]),
             lfe_io:format("~p\n", [Stack]),
-            halt(?ERROR_STATUS)
+            init:stop(?ERROR_STATUS)
     end;
 run([], _) ->
     lfe_io:format("lfescript: Missing filename\n", []),
-    halt(?ERROR_STATUS).
+    init:stop(?ERROR_STATUS).
 
 %% parse_check_run(FileName, Args, Options) -> no_return().
 %%  Parse the script file, check the code, build a function
@@ -85,12 +85,12 @@ parse_check_run(File, Args, Lopts) ->
     lists:member("s", Lopts) andalso halt(?OK_STATUS),
     Fenv1 = make_env(Fs1, Fenv0, File, Args, Lopts),
     eval_code(Fenv1, File, Args, Lopts),
-    halt(?OK_STATUS).                %Everything worked, just exit
+    init:stop(?OK_STATUS).                      %Everything worked, just exit
 
 error_exit(File, Es, Ws) ->
     list_errors(File, Es),
     list_warnings(File, Ws),
-    halt(?ERROR_STATUS).
+    init:stop(?ERROR_STATUS).
 
 list_warnings(File, [{Line,Mod,Error}|Ws]) ->
     Cs = Mod:format_error(Error),
@@ -177,10 +177,8 @@ collect_function(['define-function',F,_Meta,Def], _, St) ->
 collect_function(_Form, _, St) ->
     {[],St}.
 
-
 function_arity([lambda,As|_]) -> length(As);
 function_arity(['match-lambda',[Pats|_]|_]) -> length(Pats).
-
 
 %% eval_code(Fenv, File, Args, Lopts) -> Res.
 %%  Evaluate the code. We must explicitly catch and handle errors in
@@ -196,5 +194,5 @@ eval_code(Fenv, _, Args, _) ->
             Format = fun (T, I) -> lfe_io:prettyprint1(T, 15, I, 80) end,
             Cs = lfe_lib:format_exception(Class, Error, Stack, Skip, Format, 1),
             io:put_chars(Cs),
-            halt(?ERROR_STATUS)
+            init:stop(?ERROR_STATUS)
     end.
