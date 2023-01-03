@@ -330,4 +330,3 @@ docker-docs:
 
 docker-docs-bash:
 	docker run -i -v `pwd`/doc:/docs -t lfex/lfe-docs:latest bash
-
